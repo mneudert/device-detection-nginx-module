@@ -4,21 +4,24 @@
 
 
 typedef struct {
-    ngx_str_t  yaml;
+    ngx_flag_t  loaded;
+    ngx_str_t   yaml;
 } ngx_http_device_detection_conf_t;
 
 
+static ngx_int_t ngx_http_device_detection_loaded_variable(ngx_http_request_t *r, ngx_http_variable_value_t *v, uintptr_t data);
 static ngx_int_t ngx_http_device_detection_type_variable(ngx_http_request_t *r, ngx_http_variable_value_t *v, uintptr_t data);
 
 static ngx_int_t ngx_http_device_detection_add_variables(ngx_conf_t *cf);
 static void *ngx_http_device_detection_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_device_detection_merge_loc_conf(ngx_conf_t *cf,void *parent, void *child);
+static char *ngx_http_device_detection_yaml_value(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 
 
 static ngx_command_t  ngx_http_device_detection_commands[] = {
     { ngx_string("device_detection_yaml"),
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
-      ngx_conf_set_str_slot,
+      ngx_http_device_detection_yaml_value,
       NGX_HTTP_LOC_CONF_OFFSET,
       offsetof(ngx_http_device_detection_conf_t, yaml),
       NULL },
@@ -61,6 +64,11 @@ ngx_module_t  ngx_http_device_detection_module = {
 
 
 static ngx_http_variable_t  ngx_http_device_detection_vars[] = {
+    { ngx_string("device_detection_loaded"),
+      NULL,
+      ngx_http_device_detection_loaded_variable,
+      0, 0, 0 },
+
     { ngx_string("device_detection_type"),
       NULL,
       ngx_http_device_detection_type_variable,
@@ -68,6 +76,39 @@ static ngx_http_variable_t  ngx_http_device_detection_vars[] = {
 
     { ngx_null_string, NULL, NULL, 0, 0, 0 }
 };
+
+
+static ngx_int_t
+ngx_http_device_detection_loaded_variable(ngx_http_request_t *r, ngx_http_variable_value_t *v, uintptr_t data)
+{
+    size_t                            len;
+    const char                       *val;
+    ngx_http_device_detection_conf_t *lcf;
+
+    lcf = ngx_http_get_module_loc_conf(r, ngx_http_device_detection_module);
+
+    if (1 == lcf->loaded) {
+        val = "on";
+    } else {
+        val = "off";
+    }
+
+    len     = ngx_strlen(val);
+    v->data = ngx_pnalloc(r->pool, len);
+
+    if (NULL == v->data) {
+        return NGX_ERROR;
+    }
+
+    ngx_memcpy(v->data, val, len);
+
+    v->len          = len;
+    v->valid        = 1;
+    v->no_cacheable = 0;
+    v->not_found    = 0;
+
+    return NGX_OK;
+}
 
 
 static ngx_int_t
@@ -84,10 +125,10 @@ ngx_http_device_detection_type_variable(ngx_http_request_t *r, ngx_http_variable
 
     ngx_memcpy(v->data, val, len);
 
-    v->len = len;
-    v->valid = 1;
+    v->len          = len;
+    v->valid        = 1;
     v->no_cacheable = 0;
-    v->not_found = 0;
+    v->not_found    = 0;
 
     return NGX_OK;
 }
@@ -124,6 +165,8 @@ ngx_http_device_detection_create_loc_conf(ngx_conf_t *cf)
         return NULL;
     }
 
+    conf->loaded = NGX_CONF_UNSET;
+
     return conf;
 }
 
@@ -134,7 +177,32 @@ ngx_http_device_detection_merge_loc_conf(ngx_conf_t *cf, void *parent, void *chi
     ngx_http_device_detection_conf_t *prev = parent;
     ngx_http_device_detection_conf_t *conf = child;
 
+    ngx_conf_merge_off_value(conf->loaded, prev->loaded, 0);
     ngx_conf_merge_str_value(conf->yaml, prev->yaml, "");
+
+    return NGX_CONF_OK;
+}
+
+
+static char *
+ngx_http_device_detection_yaml_value(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+{
+    ngx_str_t *value;
+
+    ngx_http_device_detection_conf_t *lcf = conf;
+
+    if (lcf->yaml.data) {
+        return "is duplicate";
+    }
+
+    value       = cf->args->elts;
+    lcf->yaml   = value[1];
+    lcf->loaded = (0 < lcf->yaml.len);
+
+    if (!lcf->loaded) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "invalid yaml file parameter!");
+        return NGX_CONF_ERROR;
+    }
 
     return NGX_CONF_OK;
 }
