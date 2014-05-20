@@ -1,0 +1,53 @@
+# excerpt of https://github.com/piwik/device-detector/blob/master/regexes/device/mobiles.yml
+
+# Apple
+Apple:
+  regex: 'AppleTV|iPad|iPod|iPhone'
+  models:
+    - regex: 'AppleTV'
+      model: 'Apple TV'
+      device: 'tv'
+    - regex: 'iPad'
+      model: 'iPad'
+      device: 'tablet'
+    - regex: 'iPod'
+      model: 'iPod Touch'
+      device: 'smartphone'
+    - regex: 'iPhone'
+      model: 'iPhone'
+      device: 'smartphone'
+
+# Google
+Google:
+  regex: 'Nexus|GoogleTV|Glass'
+  device: 'smartphone'
+  models:
+    - regex: 'Glass'
+      model: 'Glass'
+    - regex: '(Galaxy Nexus)'
+      model: '$1'
+    - regex: '(Nexus (?:S|4|5|One))'
+      model: '$1'
+    - regex: '(Nexus (?:7|10))'
+      device: 'tablet'
+      model: '$1'
+    - regex: '(GoogleTV)'
+      device: 'tv'
+      model: '$1'
+
+# Microsoft
+Microsoft:
+  regex: 'KIN\.(One|Two)'
+  device: 'feature phone'
+  model: 'Kin $1'
+
+# ViewSonic
+ViewSonic:
+  regex: 'ViewSonic|(VSD[0-9]+) Build'
+  device: 'smart display'
+  models:
+    - regex: 'ViewSonic-ViewPad([a-z0-9]+) Build'
+      model: 'ViewPad $1'
+      device: 'tablet'
+    - regex: '(VSD[0-9]+) Build'
+      model: '$1'

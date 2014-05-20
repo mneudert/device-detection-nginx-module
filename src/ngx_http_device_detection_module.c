@@ -2,11 +2,24 @@
 #include <ngx_core.h>
 #include <ngx_http.h>
 
+#include <yaml.h>
+
+
+#define NGX_HTTP_D14N_YAML_LEVEL_BRANDS 0
+#define NGX_HTTP_D14N_YAML_LEVEL_BRAND  1
+#define NGX_HTTP_D14N_YAML_LEVEL_MODELS 2
+#define NGX_HTTP_D14N_YAML_LEVEL_MODEL  3
+
 
 typedef struct {
     ngx_flag_t  loaded;
     ngx_str_t   yaml;
 } ngx_http_d14n_conf_t;
+
+typedef struct {
+    ngx_uint_t  brands;
+    ngx_uint_t  models;
+} ngx_http_d14n_regex_counts_t;
 
 
 static ngx_int_t ngx_http_d14n_loaded_variable(ngx_http_request_t *r, ngx_http_variable_value_t *v, uintptr_t data);
@@ -16,6 +29,9 @@ static ngx_int_t ngx_http_d14n_add_variables(ngx_conf_t *cf);
 static void *ngx_http_d14n_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_d14n_merge_loc_conf(ngx_conf_t *cf,void *parent, void *child);
 static char *ngx_http_d14n_yaml_value(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+
+static ngx_int_t ngx_http_d14n_yaml_load(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf);
+static ngx_int_t ngx_http_d14n_yaml_count_regexes(char *yaml_file, ngx_http_d14n_regex_counts_t *counts);
 
 
 static ngx_command_t  ngx_http_d14n_commands[] = {
@@ -197,12 +213,113 @@ ngx_http_d14n_yaml_value(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     value       = cf->args->elts;
     lcf->yaml   = value[1];
-    lcf->loaded = (0 < lcf->yaml.len);
+    lcf->loaded = (NGX_OK == ngx_http_d14n_yaml_load(cf, lcf));
 
     if (!lcf->loaded) {
-        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "invalid yaml file parameter!");
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "Failed to load yaml file: '%s'", (char *) lcf->yaml.data);
         return NGX_CONF_ERROR;
     }
 
     return NGX_CONF_OK;
+}
+
+
+static ngx_int_t
+ngx_http_d14n_yaml_load(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf)
+{
+    ngx_http_d14n_regex_counts_t *counts = ngx_pnalloc(cf->pool, sizeof(ngx_http_d14n_regex_counts_t));
+
+    ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "device detection yaml loading: '%s': ", (char *) lcf->yaml.data);
+
+    if (NGX_OK != ngx_http_d14n_yaml_count_regexes((char *) lcf->yaml.data, counts)) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "failed to parse counts from yaml file!");
+        return NGX_ERROR;
+    }
+
+    ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "found %d brands with %d models", counts->brands, counts->models);
+
+    return NGX_OK;
+}
+
+static ngx_int_t
+ngx_http_d14n_yaml_count_regexes(char *yaml_file, ngx_http_d14n_regex_counts_t *counts)
+{
+    int error        = 0;
+    int parser_level = NGX_HTTP_D14N_YAML_LEVEL_BRANDS;
+
+    FILE          *file;
+    yaml_event_t   event;
+    yaml_parser_t  parser;
+
+    file = fopen(yaml_file, "rb");
+
+    if (!file) {
+        return NGX_ERROR;
+    }
+
+    counts->brands = 0;
+    counts->models = 0;
+
+    yaml_parser_initialize(&parser);
+    yaml_parser_set_input_file(&parser, file);
+
+    do {
+        if (!yaml_parser_parse(&parser, &event)) {
+            error = 1;
+            break;
+        }
+
+        switch (event.type) {
+
+            // level modification (and counting)
+            case YAML_SEQUENCE_START_EVENT:
+            case YAML_MAPPING_START_EVENT:
+                if (NGX_HTTP_D14N_YAML_LEVEL_BRAND == parser_level) {
+                    counts->brands++;
+                }
+
+                parser_level++;
+                break;
+
+            case YAML_SEQUENCE_END_EVENT:
+            case YAML_MAPPING_END_EVENT:
+                parser_level--;
+                break;
+
+            case YAML_SCALAR_EVENT:
+                if (0 == ngx_strcmp(event.data.scalar.value, "model")) {
+                    counts->models++;
+                }
+                break;
+
+            // ignore events
+            case YAML_ALIAS_EVENT:
+            case YAML_DOCUMENT_END_EVENT:
+            case YAML_DOCUMENT_START_EVENT:
+            case YAML_NO_EVENT:
+            case YAML_STREAM_END_EVENT:
+            case YAML_STREAM_START_EVENT:
+            default:
+                break;
+        }
+
+        if (YAML_STREAM_END_EVENT != event.type) {
+            yaml_event_delete(&event);
+        }
+
+        if (0 > parser_level) {
+            error = 1;
+            break;
+        }
+    } while (YAML_STREAM_END_EVENT != event.type);
+
+    yaml_event_delete(&event);
+    yaml_parser_delete(&parser);
+    fclose(file);
+
+    if (1 == error) {
+        return NGX_ERROR;
+    }
+
+    return NGX_OK;
 }
