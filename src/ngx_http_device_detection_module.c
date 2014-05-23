@@ -33,7 +33,6 @@ typedef struct {
     ngx_flag_t    loaded;
     ngx_str_t     yaml;
     ngx_array_t  *brands;
-    ngx_array_t  *models;
 } ngx_http_d14n_conf_t;
 
 
@@ -48,6 +47,8 @@ static char *ngx_http_d14n_yaml_value(ngx_conf_t *cf, ngx_command_t *cmd, void *
 static ngx_int_t ngx_http_d14n_yaml_load(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf);
 static ngx_int_t ngx_http_d14n_yaml_count_brands(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf);
 static ngx_int_t ngx_http_d14n_yaml_parse_brands(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf);
+static ngx_int_t ngx_http_d14n_yaml_count_models(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_http_d14n_brand_t *brand);
+static ngx_int_t ngx_http_d14n_yaml_parse_models(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_http_d14n_brand_t *brand);
 
 
 static ngx_command_t  ngx_http_d14n_commands[] = {
@@ -199,7 +200,6 @@ ngx_http_d14n_create_loc_conf(ngx_conf_t *cf)
 
     conf->loaded = NGX_CONF_UNSET;
     conf->brands = ngx_array_create(cf->pool, 0, sizeof(ngx_http_d14n_brand_t));
-    conf->models = ngx_array_create(cf->pool, 0, sizeof(ngx_http_d14n_model_t));
 
     return conf;
 }
@@ -234,7 +234,7 @@ ngx_http_d14n_yaml_value(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     lcf->loaded = (NGX_OK == ngx_http_d14n_yaml_load(cf, lcf));
 
     if (!lcf->loaded) {
-        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "Failed to load yaml file: '%s'", (char *) lcf->yaml.data);
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "failed to load yaml file: '%s'", (char *) lcf->yaml.data);
         return NGX_CONF_ERROR;
     }
 
@@ -288,7 +288,6 @@ ngx_http_d14n_yaml_count_brands(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf)
         }
 
         switch (event.type) {
-
             // level modification (and counting)
             case YAML_SEQUENCE_START_EVENT:
             case YAML_MAPPING_START_EVENT:
@@ -401,11 +400,24 @@ ngx_http_d14n_yaml_parse_brands(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf)
 
         if (YAML_SCALAR_EVENT == event.type && NGX_HTTP_D14N_YAML_LEVEL_BRANDS == parser_level) {
             if (NULL == brands[brand]) {
-                brands[brand]            = ngx_pnalloc(cf->pool, sizeof(ngx_http_d14n_brand_t));
-                brands[brand]->name.data = ngx_pnalloc(cf->pool, event.data.scalar.length + 1);
+                brands[brand]            = ngx_pcalloc(cf->pool, sizeof(ngx_http_d14n_brand_t) + 1);
+                brands[brand]->name.len  = event.data.scalar.length + 1;
+                brands[brand]->name.data = ngx_pcalloc(cf->pool, event.data.scalar.length + 1);
                 brands[brand]->models    = ngx_array_create(cf->pool, 0, sizeof(ngx_http_d14n_model_t));
 
-                ngx_memcpy(brands[brand]->name.data, event.data.scalar.value, event.data.scalar.length + 1);
+                ngx_memcpy(brands[brand]->name.data, event.data.scalar.value, event.data.scalar.length);
+                ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "parsing brand: '%s'", brands[brand]->name.data);
+
+                if (NGX_OK != ngx_http_d14n_yaml_count_models(cf, lcf, brands[brand])) {
+                    error = 1;
+                    break;
+                }
+
+                if (NGX_OK != ngx_http_d14n_yaml_parse_models(cf, lcf, brands[brand])) {
+                    error = 1;
+                    break;
+                }
+
                 continue;
             }
         }
@@ -420,9 +432,10 @@ ngx_http_d14n_yaml_parse_brands(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf)
 
                 case NGX_HTTP_D14N_YAML_KEY_REGEX:
                     current_key               = NGX_HTTP_D14N_YAML_KEY_NONE;
-                    brands[brand]->regex.data = ngx_pnalloc(cf->pool, event.data.scalar.length + 1);
+                    brands[brand]->regex.len  = event.data.scalar.length;
+                    brands[brand]->regex.data = ngx_pcalloc(cf->pool, event.data.scalar.length);
 
-                    ngx_memcpy(brands[brand]->regex.data, event.data.scalar.value, event.data.scalar.length + 1);
+                    ngx_memcpy(brands[brand]->regex.data, event.data.scalar.value, event.data.scalar.length);
                     break;
 
                 default: break;
@@ -447,21 +460,255 @@ ngx_http_d14n_yaml_parse_brands(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf)
         return NGX_ERROR;
     }
 
-    for (brand = 0; brand < lcf->brands->nelts; ++brand) {
-        if (!brands[brand]->regex.data) {
-            ngx_conf_log_error(
-                NGX_LOG_EMERG, cf, 0,
-                "parsed brand without regex: '%s'",
-                brands[brand]->name.data
-            );
+    return NGX_OK;
+}
+
+
+static ngx_int_t
+ngx_http_d14n_yaml_count_models(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_http_d14n_brand_t *brand)
+{
+    FILE          *file;
+    yaml_event_t   event;
+    yaml_parser_t  parser;
+
+    int        error        = 0;
+    int        in_brand     = 0;
+    int        parser_level = NGX_HTTP_D14N_YAML_LEVEL_BRANDS;
+    ngx_uint_t models       = 0;
+
+    file = fopen((char *) lcf->yaml.data, "rb");
+
+    if (!file) {
+        return NGX_ERROR;
+    }
+
+    yaml_parser_initialize(&parser);
+    yaml_parser_set_input_file(&parser, file);
+
+    do {
+        if (!yaml_parser_parse(&parser, &event)) {
+            error = 1;
+            break;
+        }
+
+        switch (event.type) {
+            // level modification (and counting)
+            case YAML_SEQUENCE_START_EVENT:
+            case YAML_MAPPING_START_EVENT:
+                parser_level++;
+                break;
+
+            case YAML_SEQUENCE_END_EVENT:
+            case YAML_MAPPING_END_EVENT:
+                parser_level--;
+                break;
+
+            // ignore events
+            case YAML_ALIAS_EVENT:
+            case YAML_DOCUMENT_END_EVENT:
+            case YAML_DOCUMENT_START_EVENT:
+            case YAML_NO_EVENT:
+            case YAML_SCALAR_EVENT:
+            case YAML_STREAM_END_EVENT:
+            case YAML_STREAM_START_EVENT:
+            default:
+                break;
+        }
+
+        if (YAML_SCALAR_EVENT == event.type && NGX_HTTP_D14N_YAML_LEVEL_BRAND == parser_level) {
+            if (0 == ngx_strcmp(event.data.scalar.value, brand->name.data)) {
+                in_brand = 1;
+            } else {
+                in_brand = 0;
+            }
+        }
+
+        if (in_brand && YAML_MAPPING_END_EVENT == event.type && NGX_HTTP_D14N_YAML_LEVEL_MODEL == parser_level) {
+            models++;
+        }
+
+        if (YAML_STREAM_END_EVENT != event.type) {
+            yaml_event_delete(&event);
+        }
+
+        if (0 > parser_level) {
+            error = 1;
+            break;
+        }
+    } while (YAML_STREAM_END_EVENT != event.type);
+
+    yaml_event_delete(&event);
+    yaml_parser_delete(&parser);
+    fclose(file);
+
+    if (1 == error) {
+        return NGX_ERROR;
+    }
+
+    ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "found %d models", models);
+    ngx_array_push_n(brand->models, models);
+
+    return NGX_OK;
+}
+
+
+static ngx_int_t
+ngx_http_d14n_yaml_parse_models(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_http_d14n_brand_t *brand)
+{
+    if (!brand->models->nelts) {
+        // no models!
+        return NGX_OK;
+    }
+
+    FILE          *file;
+    yaml_event_t   event;
+    yaml_parser_t  parser;
+
+    int        error        = 0;
+    int        in_brand     = 0;
+    int        parser_level = NGX_HTTP_D14N_YAML_LEVEL_ROOT;
+    int        current_key  = NGX_HTTP_D14N_YAML_KEY_NONE;
+    ngx_uint_t model        = 0;
+
+    ngx_http_d14n_model_t **models = brand->models->elts;
+
+    file = fopen((char *) lcf->yaml.data, "rb");
+
+    if (!file) {
+        return NGX_ERROR;
+    }
+
+    yaml_parser_initialize(&parser);
+    yaml_parser_set_input_file(&parser, file);
+
+    do {
+        if (!yaml_parser_parse(&parser, &event)) {
+            error = 1;
+            break;
+        }
+
+        switch (event.type) {
+            // level modification (and counting)
+            case YAML_SEQUENCE_START_EVENT:
+            case YAML_MAPPING_START_EVENT:
+                parser_level++;
+                break;
+
+            case YAML_SEQUENCE_END_EVENT:
+            case YAML_MAPPING_END_EVENT:
+                parser_level--;
+
+                if (in_brand && NGX_HTTP_D14N_YAML_LEVEL_MODELS == parser_level) {
+                    model++;
+                }
+
+                break;
+
+            // ignore events
+            case YAML_SCALAR_EVENT:
+            case YAML_ALIAS_EVENT:
+            case YAML_DOCUMENT_END_EVENT:
+            case YAML_DOCUMENT_START_EVENT:
+            case YAML_NO_EVENT:
+            case YAML_STREAM_END_EVENT:
+            case YAML_STREAM_START_EVENT:
+            default:
+                break;
+        }
+
+        if (YAML_SCALAR_EVENT == event.type && NGX_HTTP_D14N_YAML_LEVEL_BRANDS == parser_level) {
+            if (0 == ngx_strcmp(event.data.scalar.value, brand->name.data)) {
+                in_brand = 1;
+            } else {
+                in_brand = 0;
+            }
+
             continue;
         }
 
-        ngx_conf_log_error(
-            NGX_LOG_DEBUG, cf, 0,
-            "parsed brand: '%s' ( %s )",
-            brands[brand]->name.data, brands[brand]->regex.data
-        );
+        if (in_brand && YAML_SCALAR_EVENT == event.type && NGX_HTTP_D14N_YAML_LEVEL_MODEL == parser_level) {
+            if (NULL == models[model]) {
+                models[model] = ngx_pcalloc(cf->pool, sizeof(ngx_http_d14n_brand_t) + 1);
+            }
+
+            switch (current_key) {
+                case NGX_HTTP_D14N_YAML_KEY_NONE:
+                    if (0 == ngx_strcmp(event.data.scalar.value, "device")) {
+                        current_key = NGX_HTTP_D14N_YAML_KEY_DEVICE;
+                    }
+                    if (0 == ngx_strcmp(event.data.scalar.value, "model")) {
+                        current_key = NGX_HTTP_D14N_YAML_KEY_MODEL;
+                    }
+                    if (0 == ngx_strcmp(event.data.scalar.value, "regex")) {
+                        current_key = NGX_HTTP_D14N_YAML_KEY_REGEX;
+                    }
+                    break;
+
+                case NGX_HTTP_D14N_YAML_KEY_DEVICE:
+                    current_key                = NGX_HTTP_D14N_YAML_KEY_NONE;
+                    models[model]->device.len  = event.data.scalar.length + 1;
+                    models[model]->device.data = ngx_pcalloc(cf->pool, event.data.scalar.length + 1);
+
+                    ngx_memcpy(models[model]->device.data, event.data.scalar.value, event.data.scalar.length);
+                    break;
+
+                case NGX_HTTP_D14N_YAML_KEY_MODEL:
+                    current_key               = NGX_HTTP_D14N_YAML_KEY_NONE;
+                    models[model]->model.len  = event.data.scalar.length + 1;
+                    models[model]->model.data = ngx_pcalloc(cf->pool, event.data.scalar.length + 1);
+
+                    ngx_memcpy(models[model]->model.data, event.data.scalar.value, event.data.scalar.length);
+                    break;
+
+                case NGX_HTTP_D14N_YAML_KEY_REGEX:
+                    current_key               = NGX_HTTP_D14N_YAML_KEY_NONE;
+                    models[model]->regex.len  = event.data.scalar.length + 1;
+                    models[model]->regex.data = ngx_pcalloc(cf->pool, event.data.scalar.length + 1);
+
+                    ngx_memcpy(models[model]->regex.data, event.data.scalar.value, event.data.scalar.length);
+                    break;
+
+                default: break;
+            }
+        }
+
+        if (YAML_STREAM_END_EVENT != event.type) {
+            yaml_event_delete(&event);
+        }
+
+        if (0 > parser_level) {
+            error = 1;
+            break;
+        }
+    } while (YAML_STREAM_END_EVENT != event.type);
+
+    yaml_event_delete(&event);
+    yaml_parser_delete(&parser);
+    fclose(file);
+
+    if (1 == error) {
+        return NGX_ERROR;
+    }
+
+    models = brand->models->elts;
+
+    for (model = 0; model < brand->models->nelts; ++model) {
+        if (models[model]->device.len) {
+            ngx_conf_log_error(
+                NGX_LOG_DEBUG, cf, 0,
+                "parsed %s model: '%s' ( %s )",
+                models[model]->device.data,
+                models[model]->model.data,
+                models[model]->regex.data
+            );
+        } else {
+            ngx_conf_log_error(
+                NGX_LOG_DEBUG, cf, 0,
+                "parsed unknown model: '%s' ( %s )",
+                models[model]->model.data,
+                models[model]->regex.data
+            );
+        }
     }
 
     return NGX_OK;
