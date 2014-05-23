@@ -214,6 +214,10 @@ ngx_http_d14n_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_off_value(conf->loaded, prev->loaded, 0);
     ngx_conf_merge_str_value(conf->yaml, prev->yaml, "");
 
+    if (prev->brands->nelts) {
+        conf->brands = prev->brands;
+    }
+
     return NGX_CONF_OK;
 }
 
