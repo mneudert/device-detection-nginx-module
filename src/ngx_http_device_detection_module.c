@@ -18,15 +18,15 @@
 
 
 typedef struct {
-    ngx_str_t     name;
-    ngx_str_t     regex;
-    ngx_array_t  *models;
+    ngx_str_t            name;
+    ngx_regex_compile_t  regex;
+    ngx_array_t         *models;
 } ngx_http_d14n_brand_t;
 
 typedef struct {
-    ngx_str_t  model;
-    ngx_str_t  regex;
-    ngx_str_t  device;
+    ngx_str_t            model;
+    ngx_regex_compile_t  regex;
+    ngx_str_t            device;
 } ngx_http_d14n_model_t;
 
 typedef struct {
@@ -431,11 +431,20 @@ ngx_http_d14n_yaml_parse_brands(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf)
                     break;
 
                 case NGX_HTTP_D14N_YAML_KEY_REGEX:
-                    current_key               = NGX_HTTP_D14N_YAML_KEY_NONE;
-                    brands[brand]->regex.len  = event.data.scalar.length;
-                    brands[brand]->regex.data = ngx_pcalloc(cf->pool, event.data.scalar.length);
+                    current_key                       = NGX_HTTP_D14N_YAML_KEY_NONE;
+                    brands[brand]->regex.pool         = cf->pool;
+                    brands[brand]->regex.err.len      = NGX_MAX_CONF_ERRSTR;
+                    brands[brand]->regex.err.data     = ngx_pcalloc(cf->pool, NGX_MAX_CONF_ERRSTR);
+                    brands[brand]->regex.pattern.len  = event.data.scalar.length + 1;
+                    brands[brand]->regex.pattern.data = ngx_pcalloc(cf->pool, event.data.scalar.length + 1);
 
-                    ngx_memcpy(brands[brand]->regex.data, event.data.scalar.value, event.data.scalar.length);
+                    ngx_memcpy(brands[brand]->regex.pattern.data, event.data.scalar.value, event.data.scalar.length);
+
+                    if (NGX_OK != ngx_regex_compile(&brands[brand]->regex)) {
+                        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "brand regex error: %V", &brands[brand]->regex.err);
+
+                        error = 1;
+                    }
                     break;
 
                 default: break;
@@ -448,6 +457,10 @@ ngx_http_d14n_yaml_parse_brands(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf)
 
         if (0 > parser_level) {
             error = 1;
+            break;
+        }
+
+        if (1 == error) {
             break;
         }
     } while (YAML_STREAM_END_EVENT != event.type);
@@ -661,11 +674,20 @@ ngx_http_d14n_yaml_parse_models(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_h
                     break;
 
                 case NGX_HTTP_D14N_YAML_KEY_REGEX:
-                    current_key               = NGX_HTTP_D14N_YAML_KEY_NONE;
-                    models[model]->regex.len  = event.data.scalar.length + 1;
-                    models[model]->regex.data = ngx_pcalloc(cf->pool, event.data.scalar.length + 1);
+                    current_key                       = NGX_HTTP_D14N_YAML_KEY_NONE;
+                    models[model]->regex.pool         = cf->pool;
+                    models[model]->regex.err.len      = NGX_MAX_CONF_ERRSTR;
+                    models[model]->regex.err.data     = ngx_pcalloc(cf->pool, NGX_MAX_CONF_ERRSTR);
+                    models[model]->regex.pattern.len  = event.data.scalar.length + 1;
+                    models[model]->regex.pattern.data = ngx_pcalloc(cf->pool, event.data.scalar.length + 1);
 
-                    ngx_memcpy(models[model]->regex.data, event.data.scalar.value, event.data.scalar.length);
+                    ngx_memcpy(models[model]->regex.pattern.data, event.data.scalar.value, event.data.scalar.length);
+
+                    if (NGX_OK != ngx_regex_compile(&models[model]->regex)) {
+                        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "model regex error: %V", &models[model]->regex.err);
+
+                        error = 1;
+                    }
                     break;
 
                 default: break;
@@ -678,6 +700,10 @@ ngx_http_d14n_yaml_parse_models(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_h
 
         if (0 > parser_level) {
             error = 1;
+            break;
+        }
+
+        if (1 == error) {
             break;
         }
     } while (YAML_STREAM_END_EVENT != event.type);
@@ -699,14 +725,14 @@ ngx_http_d14n_yaml_parse_models(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_h
                 "parsed %s model: '%s' ( %s )",
                 models[model]->device.data,
                 models[model]->model.data,
-                models[model]->regex.data
+                models[model]->regex.pattern.data
             );
         } else {
             ngx_conf_log_error(
                 NGX_LOG_DEBUG, cf, 0,
                 "parsed unknown model: '%s' ( %s )",
                 models[model]->model.data,
-                models[model]->regex.data
+                models[model]->regex.pattern.data
             );
         }
     }
