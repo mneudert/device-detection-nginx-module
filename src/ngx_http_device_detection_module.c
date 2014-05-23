@@ -178,7 +178,7 @@ ngx_http_d14n_type_variable(ngx_http_request_t *r, ngx_http_variable_value_t *v,
             ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "matched brand: %s", brands[brand]->name.data);
 
             if (brands[brand]->device_default.len) {
-                val = brands[brand]->device_default.data;
+                val = (char *) brands[brand]->device_default.data;
             }
 
             break;
