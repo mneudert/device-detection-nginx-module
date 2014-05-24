@@ -31,9 +31,10 @@ typedef struct {
 } ngx_http_d14n_model_t;
 
 typedef struct {
-    ngx_flag_t    loaded;
-    ngx_str_t     yaml;
-    ngx_array_t  *brands;
+    ngx_flag_t       loaded;
+    ngx_str_t        yaml;
+    ngx_open_file_t *miss_log;
+    ngx_array_t     *brands;
 } ngx_http_d14n_conf_t;
 
 
@@ -43,6 +44,7 @@ static ngx_int_t ngx_http_d14n_type_variable(ngx_http_request_t *r, ngx_http_var
 static ngx_int_t ngx_http_d14n_add_variables(ngx_conf_t *cf);
 static void *ngx_http_d14n_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_d14n_merge_loc_conf(ngx_conf_t *cf,void *parent, void *child);
+static char *ngx_http_d14n_miss_log_value(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static char *ngx_http_d14n_yaml_value(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 
 static ngx_int_t ngx_http_d14n_yaml_load(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf);
@@ -53,6 +55,13 @@ static ngx_int_t ngx_http_d14n_yaml_parse_models(ngx_conf_t *cf, ngx_http_d14n_c
 
 
 static ngx_command_t  ngx_http_d14n_commands[] = {
+    { ngx_string("device_detection_miss_log"),
+      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+      ngx_http_d14n_miss_log_value,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_d14n_conf_t, miss_log),
+      NULL },
+
     { ngx_string("device_detection_yaml"),
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
       ngx_http_d14n_yaml_value,
@@ -208,6 +217,11 @@ ngx_http_d14n_type_variable(ngx_http_request_t *r, ngx_http_variable_value_t *v,
         }
     }
 
+    if (0 == ngx_strcmp(val, "undetected") && lcf->miss_log) {
+        ngx_write_fd(lcf->miss_log->fd, r->headers_in.user_agent->value.data, r->headers_in.user_agent->value.len);
+        ngx_write_fd(lcf->miss_log->fd, "\n", 1);
+    }
+
     len     = ngx_strlen(val);
     v->data = ngx_pnalloc(r->pool, len);
 
@@ -273,6 +287,10 @@ ngx_http_d14n_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_off_value(conf->loaded, prev->loaded, 0);
     ngx_conf_merge_str_value(conf->yaml, prev->yaml, "");
 
+    if (prev->miss_log) {
+        conf->miss_log = prev->miss_log;
+    }
+
     if (prev->brands->nelts) {
         conf->brands = prev->brands;
     }
@@ -282,10 +300,36 @@ ngx_http_d14n_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 
 
 static char *
+ngx_http_d14n_miss_log_value(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+{
+    ngx_str_t            *value;
+    ngx_http_d14n_conf_t *lcf = conf;
+
+    if (lcf->miss_log) {
+        if (NGX_FILE_ERROR == ngx_close_file(lcf->miss_log->fd)) {
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "failed to close miss_log file!");
+
+            return NGX_CONF_ERROR;
+        }
+    }
+
+    value         = cf->args->elts;
+    lcf->miss_log = ngx_pcalloc(cf->pool, sizeof(ngx_open_file_t));
+    lcf->miss_log = ngx_conf_open_file(cf->cycle, &value[1]);
+
+    if (!lcf->miss_log->fd) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "failed to open miss_log file!");
+        return NGX_CONF_ERROR;
+    }
+
+    return NGX_CONF_OK;
+}
+
+
+static char *
 ngx_http_d14n_yaml_value(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
-    ngx_str_t *value;
-
+    ngx_str_t            *value;
     ngx_http_d14n_conf_t *lcf = conf;
 
     if (lcf->yaml.data) {
