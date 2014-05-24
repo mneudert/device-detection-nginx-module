@@ -21,6 +21,7 @@ typedef struct {
     ngx_str_t            name;
     ngx_regex_compile_t  regex;
     ngx_str_t            device_default;
+    ngx_str_t            model_default;
     ngx_array_t         *models;
 } ngx_http_d14n_brand_t;
 
@@ -39,6 +40,7 @@ typedef struct {
 
 
 static ngx_int_t ngx_http_d14n_loaded_variable(ngx_http_request_t *r, ngx_http_variable_value_t *v, uintptr_t data);
+static ngx_int_t ngx_http_d14n_model_variable(ngx_http_request_t *r, ngx_http_variable_value_t *v, uintptr_t data);
 static ngx_int_t ngx_http_d14n_type_variable(ngx_http_request_t *r, ngx_http_variable_value_t *v, uintptr_t data);
 
 static ngx_int_t ngx_http_d14n_add_variables(ngx_conf_t *cf);
@@ -112,6 +114,11 @@ static ngx_http_variable_t  ngx_http_d14n_vars[] = {
       ngx_http_d14n_loaded_variable,
       0, 0, 0 },
 
+    { ngx_string("device_detection_model"),
+      NULL,
+      ngx_http_d14n_model_variable,
+      0, 0, 0 },
+
     { ngx_string("device_detection_type"),
       NULL,
       ngx_http_d14n_type_variable,
@@ -134,6 +141,92 @@ ngx_http_d14n_loaded_variable(ngx_http_request_t *r, ngx_http_variable_value_t *
         val = "on";
     } else {
         val = "off";
+    }
+
+    len     = ngx_strlen(val);
+    v->data = ngx_pnalloc(r->pool, len);
+
+    if (NULL == v->data) {
+        return NGX_ERROR;
+    }
+
+    ngx_memcpy(v->data, val, len);
+
+    v->len          = len;
+    v->valid        = 1;
+    v->no_cacheable = 0;
+    v->not_found    = 0;
+
+    return NGX_OK;
+}
+
+
+static ngx_int_t
+ngx_http_d14n_model_variable(ngx_http_request_t *r, ngx_http_variable_value_t *v, uintptr_t data)
+{
+    ngx_http_d14n_conf_t *lcf;
+    ngx_uint_t            brand, model;
+    size_t                len;
+    char                 *val = "undetected";
+
+    ngx_http_d14n_brand_t **brands;
+    ngx_http_d14n_model_t **models;
+
+    lcf = ngx_http_get_module_loc_conf(r, ngx_http_device_detection_module);
+
+    if (1 == lcf->loaded && r->headers_in.user_agent->value.len && lcf->brands->nelts) {
+        ngx_log_error(
+            NGX_LOG_DEBUG, r->connection->log, 0,
+            "matching '%s' againts %d brands",
+            r->headers_in.user_agent->value.data, lcf->brands->nelts
+        );
+
+        brands = lcf->brands->elts;
+
+        for (brand = 0; brand < lcf->brands->nelts; ++brand) {
+            if (!brands[brand]->regex.pattern.len) {
+                continue;
+            }
+
+            if (NGX_REGEX_NO_MATCHED == ngx_regex_exec(brands[brand]->regex.regex, &r->headers_in.user_agent->value, NULL, 0)) {
+                continue;
+            }
+
+            ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "matched brand: %s", brands[brand]->name.data);
+
+            if (brands[brand]->model_default.len) {
+                val = (char *) brands[brand]->model_default.data;
+            }
+
+            if (!brands[brand]->models->nelts) {
+                break;
+            }
+
+            models = brands[brand]->models->elts;
+
+            for (model = 0; model < brands[brand]->models->nelts; ++model) {
+                if (!models[model]->regex.pattern.len) {
+                    continue;
+                }
+
+                if (NGX_REGEX_NO_MATCHED == ngx_regex_exec(models[model]->regex.regex, &r->headers_in.user_agent->value, NULL, 0)) {
+                    continue;
+                }
+
+                ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "matched model: %s", models[model]->model.data);
+
+                if (models[model]->model.len) {
+                    val = (char *) models[model]->model.data;
+                }
+            }
+
+            break;
+        }
+    }
+
+    if (0 == ngx_strcmp(val, "undetected") && lcf->miss_log) {
+        ngx_write_fd(lcf->miss_log->fd, r->headers_in.user_agent->value.data, r->headers_in.user_agent->value.len);
+        ngx_write_fd(lcf->miss_log->fd, "\n", 1);
     }
 
     len     = ngx_strlen(val);
@@ -546,6 +639,14 @@ ngx_http_d14n_yaml_parse_brands(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf)
                     brands[brand]->device_default.data = ngx_pcalloc(cf->pool, event.data.scalar.length + 1);
 
                     ngx_memcpy(brands[brand]->device_default.data, event.data.scalar.value, event.data.scalar.length);
+                    break;
+
+                case NGX_HTTP_D14N_YAML_KEY_MODEL:
+                    current_key                       = NGX_HTTP_D14N_YAML_KEY_NONE;
+                    brands[brand]->model_default.len  = event.data.scalar.length + 1;
+                    brands[brand]->model_default.data = ngx_pcalloc(cf->pool, event.data.scalar.length + 1);
+
+                    ngx_memcpy(brands[brand]->model_default.data, event.data.scalar.value, event.data.scalar.length);
                     break;
 
                 case NGX_HTTP_D14N_YAML_KEY_REGEX:
