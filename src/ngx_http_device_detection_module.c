@@ -149,11 +149,12 @@ static ngx_int_t
 ngx_http_d14n_type_variable(ngx_http_request_t *r, ngx_http_variable_value_t *v, uintptr_t data)
 {
     ngx_http_d14n_conf_t *lcf;
-    ngx_uint_t            brand;
+    ngx_uint_t            brand, model;
     size_t                len;
     char                 *val = "undetected";
 
     ngx_http_d14n_brand_t **brands;
+    ngx_http_d14n_model_t **models;
 
     lcf = ngx_http_get_module_loc_conf(r, ngx_http_device_detection_module);
 
@@ -179,6 +180,28 @@ ngx_http_d14n_type_variable(ngx_http_request_t *r, ngx_http_variable_value_t *v,
 
             if (brands[brand]->device_default.len) {
                 val = (char *) brands[brand]->device_default.data;
+            }
+
+            if (!brands[brand]->models->nelts) {
+                break;
+            }
+
+            models = brands[brand]->models->elts;
+
+            for (model = 0; model < brands[brand]->models->nelts; ++model) {
+                if (!models[model]->regex.pattern.len) {
+                    continue;
+                }
+
+                if (NGX_REGEX_NO_MATCHED == ngx_regex_exec(models[model]->regex.regex, &r->headers_in.user_agent->value, NULL, 0)) {
+                    continue;
+                }
+
+                ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "matched model: %s", models[model]->model.data);
+
+                if (models[model]->device.len) {
+                    val = (char *) models[model]->device.data;
+                }
             }
 
             break;
