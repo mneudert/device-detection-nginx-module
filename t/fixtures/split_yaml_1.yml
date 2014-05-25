@@ -1,0 +1,4 @@
+Secondary:
+  regex: 'primary'
+  device: 'primary device'
+  model: 'primary model'

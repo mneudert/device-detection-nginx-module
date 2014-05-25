@@ -33,7 +33,6 @@ typedef struct {
 
 typedef struct {
     ngx_flag_t       loaded;
-    ngx_str_t        yaml;
     ngx_open_file_t *miss_log;
     ngx_array_t     *brands;
 } ngx_http_d14n_conf_t;
@@ -49,11 +48,11 @@ static char *ngx_http_d14n_merge_loc_conf(ngx_conf_t *cf,void *parent, void *chi
 static char *ngx_http_d14n_miss_log_value(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static char *ngx_http_d14n_yaml_value(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 
-static ngx_int_t ngx_http_d14n_yaml_load(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf);
-static ngx_int_t ngx_http_d14n_yaml_count_brands(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf);
-static ngx_int_t ngx_http_d14n_yaml_parse_brands(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf);
-static ngx_int_t ngx_http_d14n_yaml_count_models(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_http_d14n_brand_t *brand);
-static ngx_int_t ngx_http_d14n_yaml_parse_models(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_http_d14n_brand_t *brand);
+static ngx_int_t ngx_http_d14n_yaml_load(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_str_t *yaml);
+static ngx_int_t ngx_http_d14n_yaml_count_brands(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_str_t *yaml);
+static ngx_int_t ngx_http_d14n_yaml_parse_brands(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_str_t *yaml);
+static ngx_int_t ngx_http_d14n_yaml_count_models(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_http_d14n_brand_t *brand, ngx_str_t *yaml);
+static ngx_int_t ngx_http_d14n_yaml_parse_models(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_http_d14n_brand_t *brand, ngx_str_t *yaml);
 
 
 static ngx_command_t  ngx_http_d14n_commands[] = {
@@ -68,7 +67,7 @@ static ngx_command_t  ngx_http_d14n_commands[] = {
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
       ngx_http_d14n_yaml_value,
       NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(ngx_http_d14n_conf_t, yaml),
+      0,
       NULL },
 
     ngx_null_command
@@ -378,7 +377,6 @@ ngx_http_d14n_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_http_d14n_conf_t *conf = child;
 
     ngx_conf_merge_off_value(conf->loaded, prev->loaded, 0);
-    ngx_conf_merge_str_value(conf->yaml, prev->yaml, "");
 
     if (prev->miss_log) {
         conf->miss_log = prev->miss_log;
@@ -425,16 +423,11 @@ ngx_http_d14n_yaml_value(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_str_t            *value;
     ngx_http_d14n_conf_t *lcf = conf;
 
-    if (lcf->yaml.data) {
-        return "is duplicate";
-    }
-
     value       = cf->args->elts;
-    lcf->yaml   = value[1];
-    lcf->loaded = (NGX_OK == ngx_http_d14n_yaml_load(cf, lcf));
+    lcf->loaded = (NGX_OK == ngx_http_d14n_yaml_load(cf, lcf, &value[1]));
 
     if (!lcf->loaded) {
-        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "failed to load yaml file: '%s'", (char *) lcf->yaml.data);
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "failed to load yaml file: '%s'", value[1].data);
         return NGX_CONF_ERROR;
     }
 
@@ -443,16 +436,16 @@ ngx_http_d14n_yaml_value(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
 
 static ngx_int_t
-ngx_http_d14n_yaml_load(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf)
+ngx_http_d14n_yaml_load(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_str_t *yaml)
 {
-    ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "device detection yaml loading: '%s': ", (char *) lcf->yaml.data);
+    ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "device detection yaml loading: '%s': ", yaml->data);
 
-    if (NGX_OK != ngx_http_d14n_yaml_count_brands(cf, lcf)) {
+    if (NGX_OK != ngx_http_d14n_yaml_count_brands(cf, lcf, yaml)) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "failed to parse brand count from yaml file!");
         return NGX_ERROR;
     }
 
-    if (NGX_OK != ngx_http_d14n_yaml_parse_brands(cf, lcf)) {
+    if (NGX_OK != ngx_http_d14n_yaml_parse_brands(cf, lcf, yaml)) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "failed to parse brands count from yaml file!");
         return NGX_ERROR;
     }
@@ -462,7 +455,7 @@ ngx_http_d14n_yaml_load(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf)
 
 
 static ngx_int_t
-ngx_http_d14n_yaml_count_brands(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf)
+ngx_http_d14n_yaml_count_brands(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_str_t *yaml)
 {
     FILE          *file;
     yaml_event_t   event;
@@ -472,7 +465,7 @@ ngx_http_d14n_yaml_count_brands(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf)
     int        parser_level = NGX_HTTP_D14N_YAML_LEVEL_BRANDS;
     ngx_uint_t brands       = 0;
 
-    file = fopen((char *) lcf->yaml.data, "rb");
+    file = fopen((char *) yaml->data, "rb");
 
     if (!file) {
         return NGX_ERROR;
@@ -502,6 +495,9 @@ ngx_http_d14n_yaml_count_brands(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf)
             case YAML_MAPPING_END_EVENT:
                 parser_level--;
                 break;
+
+            // ignore other types
+            default: break;
         }
 
         if (YAML_STREAM_END_EVENT != event.type) {
@@ -530,20 +526,22 @@ ngx_http_d14n_yaml_count_brands(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf)
 
 
 static ngx_int_t
-ngx_http_d14n_yaml_parse_brands(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf)
+ngx_http_d14n_yaml_parse_brands(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_str_t *yaml)
 {
     FILE          *file;
     yaml_event_t   event;
     yaml_parser_t  parser;
 
-    int        error        = 0;
-    int        parser_level = NGX_HTTP_D14N_YAML_LEVEL_ROOT;
-    int        current_key  = NGX_HTTP_D14N_YAML_KEY_NONE;
-    ngx_uint_t brand        = 0;
+    int error        = 0;
+    int parser_level = NGX_HTTP_D14N_YAML_LEVEL_ROOT;
+    int current_key  = NGX_HTTP_D14N_YAML_KEY_NONE;
 
+    ngx_uint_t              brand;
     ngx_http_d14n_brand_t **brands = lcf->brands->elts;
 
-    file = fopen((char *) lcf->yaml.data, "rb");
+    for (brand = 0; brand < lcf->brands->nelts && NULL != brands[brand]; ++brand);
+
+    file = fopen((char *) yaml->data, "rb");
 
     if (!file) {
         return NGX_ERROR;
@@ -572,8 +570,10 @@ ngx_http_d14n_yaml_parse_brands(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf)
                 if (NGX_HTTP_D14N_YAML_LEVEL_BRANDS == parser_level) {
                     brand++;
                 }
-
                 break;
+
+            // ignore other types
+            default: break;
         }
 
         if (YAML_SCALAR_EVENT == event.type && NGX_HTTP_D14N_YAML_LEVEL_BRANDS == parser_level) {
@@ -586,12 +586,12 @@ ngx_http_d14n_yaml_parse_brands(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf)
                 ngx_memcpy(brands[brand]->name.data, event.data.scalar.value, event.data.scalar.length);
                 ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "parsing brand: '%s'", brands[brand]->name.data);
 
-                if (NGX_OK != ngx_http_d14n_yaml_count_models(cf, lcf, brands[brand])) {
+                if (NGX_OK != ngx_http_d14n_yaml_count_models(cf, lcf, brands[brand], yaml)) {
                     error = 1;
                     break;
                 }
 
-                if (NGX_OK != ngx_http_d14n_yaml_parse_models(cf, lcf, brands[brand])) {
+                if (NGX_OK != ngx_http_d14n_yaml_parse_models(cf, lcf, brands[brand], yaml)) {
                     error = 1;
                     break;
                 }
@@ -673,7 +673,7 @@ ngx_http_d14n_yaml_parse_brands(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf)
 
 
 static ngx_int_t
-ngx_http_d14n_yaml_count_models(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_http_d14n_brand_t *brand)
+ngx_http_d14n_yaml_count_models(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_http_d14n_brand_t *brand, ngx_str_t *yaml)
 {
     FILE          *file;
     yaml_event_t   event;
@@ -684,7 +684,7 @@ ngx_http_d14n_yaml_count_models(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_h
     int        parser_level = NGX_HTTP_D14N_YAML_LEVEL_BRANDS;
     ngx_uint_t models       = 0;
 
-    file = fopen((char *) lcf->yaml.data, "rb");
+    file = fopen((char *) yaml->data, "rb");
 
     if (!file) {
         return NGX_ERROR;
@@ -710,6 +710,9 @@ ngx_http_d14n_yaml_count_models(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_h
             case YAML_MAPPING_END_EVENT:
                 parser_level--;
                 break;
+
+            // ignore other types
+            default: break;
         }
 
         if (YAML_SCALAR_EVENT == event.type && NGX_HTTP_D14N_YAML_LEVEL_BRAND == parser_level) {
@@ -746,7 +749,7 @@ ngx_http_d14n_yaml_count_models(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_h
 
 
 static ngx_int_t
-ngx_http_d14n_yaml_parse_models(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_http_d14n_brand_t *brand)
+ngx_http_d14n_yaml_parse_models(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_http_d14n_brand_t *brand, ngx_str_t *yaml)
 {
     if (!brand->models->nelts) {
         // no models!
@@ -765,7 +768,7 @@ ngx_http_d14n_yaml_parse_models(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_h
 
     ngx_http_d14n_model_t **models = brand->models->elts;
 
-    file = fopen((char *) lcf->yaml.data, "rb");
+    file = fopen((char *) yaml->data, "rb");
 
     if (!file) {
         return NGX_ERROR;
@@ -794,8 +797,10 @@ ngx_http_d14n_yaml_parse_models(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_h
                 if (in_brand && NGX_HTTP_D14N_YAML_LEVEL_MODELS == parser_level) {
                     model++;
                 }
-
                 break;
+
+            // ignore other types
+            default: break;
         }
 
         if (YAML_SCALAR_EVENT == event.type && NGX_HTTP_D14N_YAML_LEVEL_BRANDS == parser_level) {
