@@ -502,17 +502,6 @@ ngx_http_d14n_yaml_count_brands(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf)
             case YAML_MAPPING_END_EVENT:
                 parser_level--;
                 break;
-
-            // ignore events
-            case YAML_ALIAS_EVENT:
-            case YAML_DOCUMENT_END_EVENT:
-            case YAML_DOCUMENT_START_EVENT:
-            case YAML_NO_EVENT:
-            case YAML_SCALAR_EVENT:
-            case YAML_STREAM_END_EVENT:
-            case YAML_STREAM_START_EVENT:
-            default:
-                break;
         }
 
         if (YAML_STREAM_END_EVENT != event.type) {
@@ -585,17 +574,6 @@ ngx_http_d14n_yaml_parse_brands(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf)
                 }
 
                 break;
-
-            // ignore events
-            case YAML_SCALAR_EVENT:
-            case YAML_ALIAS_EVENT:
-            case YAML_DOCUMENT_END_EVENT:
-            case YAML_DOCUMENT_START_EVENT:
-            case YAML_NO_EVENT:
-            case YAML_STREAM_END_EVENT:
-            case YAML_STREAM_START_EVENT:
-            default:
-                break;
         }
 
         if (YAML_SCALAR_EVENT == event.type && NGX_HTTP_D14N_YAML_LEVEL_BRANDS == parser_level) {
@@ -665,8 +643,6 @@ ngx_http_d14n_yaml_parse_brands(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf)
                         error = 1;
                     }
                     break;
-
-                default: break;
             }
         }
 
@@ -734,25 +710,10 @@ ngx_http_d14n_yaml_count_models(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_h
             case YAML_MAPPING_END_EVENT:
                 parser_level--;
                 break;
-
-            // ignore events
-            case YAML_ALIAS_EVENT:
-            case YAML_DOCUMENT_END_EVENT:
-            case YAML_DOCUMENT_START_EVENT:
-            case YAML_NO_EVENT:
-            case YAML_SCALAR_EVENT:
-            case YAML_STREAM_END_EVENT:
-            case YAML_STREAM_START_EVENT:
-            default:
-                break;
         }
 
         if (YAML_SCALAR_EVENT == event.type && NGX_HTTP_D14N_YAML_LEVEL_BRAND == parser_level) {
-            if (0 == ngx_strcmp(event.data.scalar.value, brand->name.data)) {
-                in_brand = 1;
-            } else {
-                in_brand = 0;
-            }
+            in_brand = (0 == ngx_strcmp(event.data.scalar.value, brand->name.data));
         }
 
         if (in_brand && YAML_MAPPING_END_EVENT == event.type && NGX_HTTP_D14N_YAML_LEVEL_MODEL == parser_level) {
@@ -835,26 +796,10 @@ ngx_http_d14n_yaml_parse_models(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_h
                 }
 
                 break;
-
-            // ignore events
-            case YAML_SCALAR_EVENT:
-            case YAML_ALIAS_EVENT:
-            case YAML_DOCUMENT_END_EVENT:
-            case YAML_DOCUMENT_START_EVENT:
-            case YAML_NO_EVENT:
-            case YAML_STREAM_END_EVENT:
-            case YAML_STREAM_START_EVENT:
-            default:
-                break;
         }
 
         if (YAML_SCALAR_EVENT == event.type && NGX_HTTP_D14N_YAML_LEVEL_BRANDS == parser_level) {
-            if (0 == ngx_strcmp(event.data.scalar.value, brand->name.data)) {
-                in_brand = 1;
-            } else {
-                in_brand = 0;
-            }
-
+            in_brand = (0 == ngx_strcmp(event.data.scalar.value, brand->name.data));
             continue;
         }
 
@@ -908,8 +853,6 @@ ngx_http_d14n_yaml_parse_models(ngx_conf_t *cf, ngx_http_d14n_conf_t *lcf, ngx_h
                         error = 1;
                     }
                     break;
-
-                default: break;
             }
         }
 
