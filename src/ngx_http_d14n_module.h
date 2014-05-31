@@ -72,6 +72,9 @@ static ngx_int_t ngx_http_d14n_yaml_parse_models(
   ngx_http_d14n_brand_t *brand, ngx_str_t *yaml);
 
 
+static int ngx_http_d14n_yaml_key(char *key_value);
+
+
 static ngx_command_t  ngx_http_d14n_commands[] = {
   { ngx_string("device_detection_miss_log"),
     NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,

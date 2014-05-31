@@ -534,20 +534,7 @@ ngx_http_d14n_yaml_parse_brands(ngx_conf_t *cf,
           && NGX_HTTP_D14N_YAML_LEVEL_BRAND == parser_level
     ) {
       switch (current_key) {
-        case NGX_HTTP_D14N_YAML_KEY_NONE:
-          if (0 == ngx_strcmp(event.data.scalar.value, "device")) {
-            current_key = NGX_HTTP_D14N_YAML_KEY_DEVICE;
-          }
-          if (0 == ngx_strcmp(event.data.scalar.value, "model")) {
-            current_key = NGX_HTTP_D14N_YAML_KEY_MODEL;
-          }
-          if (0 == ngx_strcmp(event.data.scalar.value, "regex")) {
-            current_key = NGX_HTTP_D14N_YAML_KEY_REGEX;
-          }
-          break;
-
         case NGX_HTTP_D14N_YAML_KEY_DEVICE:
-          current_key                        = NGX_HTTP_D14N_YAML_KEY_NONE;
           brands[brand]->device_default.len  = event.data.scalar.length + 1;
           brands[brand]->device_default.data = ngx_pcalloc(
             cf->pool, event.data.scalar.length + 1);
@@ -558,7 +545,6 @@ ngx_http_d14n_yaml_parse_brands(ngx_conf_t *cf,
           break;
 
         case NGX_HTTP_D14N_YAML_KEY_MODEL:
-          current_key                       = NGX_HTTP_D14N_YAML_KEY_NONE;
           brands[brand]->model_default.len  = event.data.scalar.length + 1;
           brands[brand]->model_default.data = ngx_pcalloc(
             cf->pool, event.data.scalar.length + 1);
@@ -569,7 +555,6 @@ ngx_http_d14n_yaml_parse_brands(ngx_conf_t *cf,
           break;
 
         case NGX_HTTP_D14N_YAML_KEY_REGEX:
-          current_key                       = NGX_HTTP_D14N_YAML_KEY_NONE;
           brands[brand]->regex.pool         = cf->pool;
           brands[brand]->regex.err.len      = NGX_MAX_CONF_ERRSTR;
           brands[brand]->regex.err.data     = ngx_pcalloc(cf->pool,
@@ -591,6 +576,8 @@ ngx_http_d14n_yaml_parse_brands(ngx_conf_t *cf,
 
           break;
       }
+
+      current_key = ngx_http_d14n_yaml_key((char *) event.data.scalar.value);
     }
 
     if (YAML_STREAM_END_EVENT != event.type) {
@@ -777,20 +764,7 @@ ngx_http_d14n_yaml_parse_models(ngx_conf_t *cf,
       }
 
       switch (current_key) {
-        case NGX_HTTP_D14N_YAML_KEY_NONE:
-          if (0 == ngx_strcmp(event.data.scalar.value, "device")) {
-            current_key = NGX_HTTP_D14N_YAML_KEY_DEVICE;
-          }
-          if (0 == ngx_strcmp(event.data.scalar.value, "model")) {
-            current_key = NGX_HTTP_D14N_YAML_KEY_MODEL;
-          }
-          if (0 == ngx_strcmp(event.data.scalar.value, "regex")) {
-            current_key = NGX_HTTP_D14N_YAML_KEY_REGEX;
-          }
-          break;
-
         case NGX_HTTP_D14N_YAML_KEY_DEVICE:
-          current_key                = NGX_HTTP_D14N_YAML_KEY_NONE;
           models[model]->device.len  = event.data.scalar.length + 1;
           models[model]->device.data = ngx_pcalloc(
             cf->pool, event.data.scalar.length + 1);
@@ -801,7 +775,6 @@ ngx_http_d14n_yaml_parse_models(ngx_conf_t *cf,
           break;
 
         case NGX_HTTP_D14N_YAML_KEY_MODEL:
-          current_key               = NGX_HTTP_D14N_YAML_KEY_NONE;
           models[model]->model.len  = event.data.scalar.length + 1;
           models[model]->model.data = ngx_pcalloc(
             cf->pool, event.data.scalar.length + 1);
@@ -812,7 +785,6 @@ ngx_http_d14n_yaml_parse_models(ngx_conf_t *cf,
           break;
 
         case NGX_HTTP_D14N_YAML_KEY_REGEX:
-          current_key                       = NGX_HTTP_D14N_YAML_KEY_NONE;
           models[model]->regex.pool         = cf->pool;
           models[model]->regex.err.len      = NGX_MAX_CONF_ERRSTR;
           models[model]->regex.err.data     = ngx_pcalloc(cf->pool,
@@ -834,6 +806,8 @@ ngx_http_d14n_yaml_parse_models(ngx_conf_t *cf,
 
           break;
       }
+
+      current_key = ngx_http_d14n_yaml_key((char *) event.data.scalar.value);
     }
 
     if (YAML_STREAM_END_EVENT != event.type) {
@@ -876,4 +850,22 @@ ngx_http_d14n_yaml_parse_models(ngx_conf_t *cf,
   }
 
   return NGX_OK;
+}
+
+
+static int
+ngx_http_d14n_yaml_key(char *key_value) {
+  if (0 == ngx_strcmp(key_value, "device")) {
+    return NGX_HTTP_D14N_YAML_KEY_DEVICE;
+  }
+
+  if (0 == ngx_strcmp(key_value, "model")) {
+    return NGX_HTTP_D14N_YAML_KEY_MODEL;
+  }
+
+  if (0 == ngx_strcmp(key_value, "regex")) {
+    return NGX_HTTP_D14N_YAML_KEY_REGEX;
+  }
+
+  return NGX_HTTP_D14N_YAML_KEY_NONE;
 }
