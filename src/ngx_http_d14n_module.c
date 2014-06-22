@@ -61,11 +61,7 @@ ngx_http_d14n_model_variable(ngx_http_request_t *r,
     brands = lcf->brands->elts;
 
     for (brand = 0; brand < lcf->brands->nelts; ++brand) {
-      if (!brands[brand]->regex.pattern.len) {
-        continue;
-      }
-
-      re_result = ngx_regex_exec(brands[brand]->regex.regex,
+      re_result = ngx_regex_exec(brands[brand]->regex,
                                  &r->headers_in.user_agent->value,
                                  NULL, 0);
 
@@ -88,11 +84,7 @@ ngx_http_d14n_model_variable(ngx_http_request_t *r,
       models = brands[brand]->models->elts;
 
       for (model = 0; model < brands[brand]->models->nelts; ++model) {
-        if (!models[model]->regex.pattern.len) {
-          continue;
-        }
-
-        re_result = ngx_regex_exec(models[model]->regex.regex,
+        re_result = ngx_regex_exec(models[model]->regex,
                                    &r->headers_in.user_agent->value,
                                    NULL, 0);
 
@@ -165,11 +157,7 @@ ngx_http_d14n_type_variable(ngx_http_request_t *r,
     brands = lcf->brands->elts;
 
     for (brand = 0; brand < lcf->brands->nelts; ++brand) {
-      if (!brands[brand]->regex.pattern.len) {
-        continue;
-      }
-
-      re_result = ngx_regex_exec(brands[brand]->regex.regex,
+      re_result = ngx_regex_exec(brands[brand]->regex,
                                  &r->headers_in.user_agent->value,
                                  NULL, 0);
 
@@ -192,11 +180,7 @@ ngx_http_d14n_type_variable(ngx_http_request_t *r,
       models = brands[brand]->models->elts;
 
       for (model = 0; model < brands[brand]->models->nelts; ++model) {
-        if (!models[model]->regex.pattern.len) {
-          continue;
-        }
-
-        re_result = ngx_regex_exec(models[model]->regex.regex,
+        re_result = ngx_regex_exec(models[model]->regex,
                                    &r->headers_in.user_agent->value,
                                    NULL, 0);
 
@@ -450,6 +434,8 @@ ngx_http_d14n_yaml_parse_brands(ngx_conf_t *cf,
   int parser_level = NGX_HTTP_D14N_YAML_LEVEL_ROOT;
   int current_key  = NGX_HTTP_D14N_YAML_KEY_NONE;
 
+  u_char                  regex_err[NGX_MAX_CONF_ERRSTR];
+  ngx_regex_compile_t     regex_c;
   ngx_uint_t              brand;
   ngx_http_d14n_brand_t **brands = lcf->brands->elts;
 
@@ -498,7 +484,7 @@ ngx_http_d14n_yaml_parse_brands(ngx_conf_t *cf,
     ) {
       brands[brand] = ngx_pcalloc(cf->pool, sizeof(ngx_http_d14n_brand_t));
 
-      brands[brand]->name.len  = event.data.scalar.length + 1;
+      brands[brand]->name.len  = event.data.scalar.length;
       brands[brand]->name.data = ngx_pcalloc(cf->pool,
                                              event.data.scalar.length + 1);
 
@@ -534,7 +520,7 @@ ngx_http_d14n_yaml_parse_brands(ngx_conf_t *cf,
     ) {
       switch (current_key) {
         case NGX_HTTP_D14N_YAML_KEY_DEVICE:
-          brands[brand]->device_default.len  = event.data.scalar.length + 1;
+          brands[brand]->device_default.len  = event.data.scalar.length;
           brands[brand]->device_default.data = ngx_pcalloc(
             cf->pool, event.data.scalar.length + 1);
 
@@ -554,23 +540,21 @@ ngx_http_d14n_yaml_parse_brands(ngx_conf_t *cf,
           break;
 
         case NGX_HTTP_D14N_YAML_KEY_REGEX:
-          brands[brand]->regex.pool         = cf->pool;
-          brands[brand]->regex.err.len      = NGX_MAX_CONF_ERRSTR;
-          brands[brand]->regex.err.data     = ngx_pcalloc(cf->pool,
-                                                          NGX_MAX_CONF_ERRSTR);
-          brands[brand]->regex.pattern.len  = event.data.scalar.length + 1;
-          brands[brand]->regex.pattern.data = ngx_pcalloc(
-            cf->pool, event.data.scalar.length + 1);
+          ngx_memzero(&regex_c, sizeof(ngx_regex_compile_t));
 
-          ngx_memcpy(brands[brand]->regex.pattern.data,
-                     event.data.scalar.value,
-                     event.data.scalar.length);
+          regex_c.pool         = cf->pool;
+          regex_c.err.len      = NGX_MAX_CONF_ERRSTR;
+          regex_c.err.data     = regex_err;
+          regex_c.pattern.len  = event.data.scalar.length;
+          regex_c.pattern.data = event.data.scalar.value;
 
-          if (NGX_OK != ngx_regex_compile(&brands[brand]->regex)) {
+          if (NGX_OK != ngx_regex_compile(&regex_c)) {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                "brand regex error: %V",
-                               &brands[brand]->regex.err);
+                               regex_err);
             error = 1;
+          } else {
+            brands[brand]->regex = regex_c.regex;
           }
 
           break;
@@ -708,6 +692,8 @@ ngx_http_d14n_yaml_parse_models(ngx_conf_t *cf,
   int    current_key  = NGX_HTTP_D14N_YAML_KEY_NONE;
   ngx_uint_t model    = 0;
 
+  u_char                  regex_err[NGX_MAX_CONF_ERRSTR];
+  ngx_regex_compile_t     regex_c;
   ngx_http_d14n_model_t **models = brand->models->elts;
 
   file = fopen((char *) yaml->data, "rb");
@@ -763,7 +749,7 @@ ngx_http_d14n_yaml_parse_models(ngx_conf_t *cf,
 
       switch (current_key) {
         case NGX_HTTP_D14N_YAML_KEY_DEVICE:
-          models[model]->device.len  = event.data.scalar.length + 1;
+          models[model]->device.len  = event.data.scalar.length;
           models[model]->device.data = ngx_pcalloc(
             cf->pool, event.data.scalar.length + 1);
 
@@ -773,7 +759,7 @@ ngx_http_d14n_yaml_parse_models(ngx_conf_t *cf,
           break;
 
         case NGX_HTTP_D14N_YAML_KEY_MODEL:
-          models[model]->model.len  = event.data.scalar.length + 1;
+          models[model]->model.len  = event.data.scalar.length;
           models[model]->model.data = ngx_pcalloc(
             cf->pool, event.data.scalar.length + 1);
 
@@ -783,23 +769,21 @@ ngx_http_d14n_yaml_parse_models(ngx_conf_t *cf,
           break;
 
         case NGX_HTTP_D14N_YAML_KEY_REGEX:
-          models[model]->regex.pool         = cf->pool;
-          models[model]->regex.err.len      = NGX_MAX_CONF_ERRSTR;
-          models[model]->regex.err.data     = ngx_pcalloc(cf->pool,
-                                                          NGX_MAX_CONF_ERRSTR);
-          models[model]->regex.pattern.len  = event.data.scalar.length + 1;
-          models[model]->regex.pattern.data = ngx_pcalloc(
-            cf->pool, event.data.scalar.length + 1);
+          ngx_memzero(&regex_c, sizeof(ngx_regex_compile_t));
 
-          ngx_memcpy(models[model]->regex.pattern.data,
-                     event.data.scalar.value,
-                     event.data.scalar.length);
+          regex_c.pool         = cf->pool;
+          regex_c.err.len      = NGX_MAX_CONF_ERRSTR;
+          regex_c.err.data     = regex_err;
+          regex_c.pattern.len  = event.data.scalar.length;
+          regex_c.pattern.data = event.data.scalar.value;
 
-          if (NGX_OK != ngx_regex_compile(&models[model]->regex)) {
+          if (NGX_OK != ngx_regex_compile(&regex_c)) {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                "model regex error: %V",
-                               &models[model]->regex.err);
+                               regex_err);
             error = 1;
+          } else {
+            models[model]->regex = regex_c.regex;
           }
 
           break;
@@ -828,23 +812,6 @@ ngx_http_d14n_yaml_parse_models(ngx_conf_t *cf,
 
   if (1 == error) {
     return NGX_ERROR;
-  }
-
-  models = brand->models->elts;
-
-  for (model = 0; model < brand->models->nelts; ++model) {
-    if (models[model]->device.len) {
-      ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0,
-                         "parsed %s model: '%s' ( %s )",
-                         models[model]->device.data,
-                         models[model]->model.data,
-                         models[model]->regex.pattern.data);
-    } else {
-      ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0,
-                         "parsed default/unknown model: '%s' ( %s )",
-                         models[model]->model.data,
-                         models[model]->regex.pattern.data);
-    }
   }
 
   return NGX_OK;

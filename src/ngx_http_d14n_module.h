@@ -22,23 +22,23 @@
 
 
 typedef struct {
-  ngx_str_t      name;
-  ngx_regex_compile_t  regex;
-  ngx_str_t      device_default;
-  ngx_str_t      model_default;
-  ngx_array_t     *models;
+  ngx_str_t    name;
+  ngx_regex_t *regex;
+  ngx_str_t    device_default;
+  ngx_str_t    model_default;
+  ngx_array_t *models;
 } ngx_http_d14n_brand_t;
 
 typedef struct {
-  ngx_str_t      model;
-  ngx_regex_compile_t  regex;
-  ngx_str_t      device;
+  ngx_str_t    model;
+  ngx_regex_t *regex;
+  ngx_str_t    device;
 } ngx_http_d14n_model_t;
 
 typedef struct {
-  ngx_flag_t     loaded;
+  ngx_flag_t       loaded;
   ngx_open_file_t *miss_log;
-  ngx_array_t   *brands;
+  ngx_array_t     *brands;
 } ngx_http_d14n_conf_t;
 
 
