@@ -497,7 +497,7 @@ ngx_http_d14n_yaml_parse_brands(ngx_conf_t *cf,
           && NGX_HTTP_D14N_YAML_LEVEL_BRANDS == parser_level
           && NULL == brands[brand]
     ) {
-      brands[brand] = ngx_pcalloc(cf->pool, sizeof(ngx_http_d14n_brand_t) + 1);
+      brands[brand] = ngx_pcalloc(cf->pool, sizeof(ngx_http_d14n_brand_t));
 
       brands[brand]->name.len  = event.data.scalar.length + 1;
       brands[brand]->name.data = ngx_pcalloc(cf->pool,
@@ -759,8 +759,7 @@ ngx_http_d14n_yaml_parse_models(ngx_conf_t *cf,
           && NGX_HTTP_D14N_YAML_LEVEL_MODEL == parser_level
     ) {
       if (NULL == models[model]) {
-        models[model] = ngx_pcalloc(cf->pool,
-                                    sizeof(ngx_http_d14n_brand_t) + 1);
+        models[model] = ngx_pcalloc(cf->pool, sizeof(ngx_http_d14n_model_t));
       }
 
       switch (current_key) {
