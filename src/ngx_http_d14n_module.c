@@ -306,7 +306,6 @@ ngx_http_d14n_miss_log_value(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
     if (NGX_FILE_ERROR == ngx_close_file(lcf->miss_log->fd)) {
       ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                          "failed to close miss_log file!");
-
       return NGX_CONF_ERROR;
     }
   }
@@ -348,7 +347,7 @@ ngx_http_d14n_yaml_load(ngx_conf_t *cf,
                         ngx_http_d14n_conf_t *lcf,
                         ngx_str_t *yaml) {
   ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0,
-                     "device detection yaml loading: '%s': ",
+                     "loading device detection yaml file: '%s'",
                      yaml->data);
 
   if (NGX_OK != ngx_http_d14n_yaml_count_brands(cf, lcf, yaml)) {
@@ -359,7 +358,7 @@ ngx_http_d14n_yaml_load(ngx_conf_t *cf,
 
   if (NGX_OK != ngx_http_d14n_yaml_parse_brands(cf, lcf, yaml)) {
     ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                       "failed to parse brands count from yaml file!");
+                       "failed to parse brands from yaml file!");
     return NGX_ERROR;
   }
 
@@ -842,7 +841,7 @@ ngx_http_d14n_yaml_parse_models(ngx_conf_t *cf,
                          models[model]->regex.pattern.data);
     } else {
       ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0,
-                         "parsed unknown model: '%s' ( %s )",
+                         "parsed default/unknown model: '%s' ( %s )",
                          models[model]->model.data,
                          models[model]->regex.pattern.data);
     }
