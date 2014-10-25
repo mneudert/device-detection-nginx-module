@@ -1,5 +1,5 @@
 language: perl
-perl: 5.19
+perl: 5.20
 
 before_install:
   - sudo apt-get install libluajit-5.1-dev libluajit-5.1.2 libyaml-0-2 libyaml-dev
