@@ -25,8 +25,7 @@ During compilation the following header files have to be available:
 The unit tests use [Test::Nginx](http://github.com/agentzh/test-nginx) and Lua.
 
 To be able to run them using `prove` you need to compile nginx with the
-[lua module](https://github.com/openresty/lua-nginx-module) and
-[devel kit module](https://github.com/simpl/ngx_devel_kit).
+[lua module](https://github.com/openresty/lua-nginx-module).
 
 ### Nginx
 
@@ -51,7 +50,6 @@ To be able to run the unit tests you need additional modules configured:
 ```shell
 cd /path/to/nginx/src
 ./configure \
-  --add-module=/projects/public/ngx_devel_kit \
   --add-module=/projects/public/lua-nginx-module \
   --add-module=/projects/private/device-detection-nginx-module
 make install
