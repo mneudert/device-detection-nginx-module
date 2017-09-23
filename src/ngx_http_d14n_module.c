@@ -55,7 +55,7 @@ ngx_http_d14n_model_variable(ngx_http_request_t *r,
         && lcf->brands->nelts
   ) {
     ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0,
-                  "matching '%s' againts %d brands",
+                  "matching '%s' against %d brands",
                   r->headers_in.user_agent->value.data, lcf->brands->nelts);
 
     brands = lcf->brands->elts;
@@ -150,7 +150,7 @@ ngx_http_d14n_type_variable(ngx_http_request_t *r,
         && lcf->brands->nelts
   ) {
     ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0,
-                  "matching '%s' againts %d brands",
+                  "matching '%s' against %d brands",
                   r->headers_in.user_agent->value.data,
                   lcf->brands->nelts);
 
